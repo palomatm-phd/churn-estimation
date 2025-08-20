@@ -1,0 +1,25 @@
+{
+  "zero_fill_patterns": {
+    "endswith": ["_Mean"],
+    "startswith": ["change_", "avg6"]
+  },
+  "median_fill_columns": [
+    "hnd_price",
+    "lor",
+    "adults",
+    "income",
+    "numbcars"
+  ],
+  "categorical_fill_value": "UNKN",
+  "null_flag_columns": [
+    "infobase",
+    "rev_Mean",
+    "hnd_price",
+    "change_rev",
+    "avg6rev",
+    "lor",
+    "adults",
+    "income",
+    "numbcars"
+  ]
+}
