@@ -1,0 +1,10 @@
+airflow/logs
+airflow/plugins
+data
+.churn-env
+data/
+.env/
+.churn-env/
+dags/__pycache__
+dags/logs
+dags/plugins

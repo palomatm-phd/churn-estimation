@@ -1,5 +1,11 @@
 {
   "preprocessing": {
+    "row_removal": {
+      "null_subset_cols": ["dualband", "area", "models"]
+    },
+    "negative_values": {
+      "exception_cols": ["change_rev", "change_mou"]
+    },
     "imputation": {
       "zero_fill_patterns": {
         "endswith": ["_Mean"],

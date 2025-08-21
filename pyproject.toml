@@ -1,0 +1,6 @@
+[project]
+name = "churn_library"
+version = "0.1.0"
+
+[tool.setuptools]
+packages = ["churn_library"]
