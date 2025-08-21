@@ -68,9 +68,22 @@ def impute_with_median(df, cols_to_fill):
 
 # ---TASK FUNCTIONS
 
-def find_columns_by_pattern(df, patterns):
-    """Helper function to find columns that match specified patterns."""
+def find_columns_for_imputation(df, config_section):
+    """
+    Finds columns based on exact names, startswith patterns, and endswith patterns
+    defined in a configuration dictionary.
+    """
     cols_to_match = []
+
+    exact_cols = config_section.get('exact_columns', [])
+    for col in exact_cols:
+        if col in df.columns and col not in cols_to_match:
+            cols_to_match.append(col)
+
+    patterns = config_section.get('patterns', {})
+    if not patterns:
+        return list(set(cols_to_match)) 
+
     for col in df.columns:
         if patterns.get('startswith'):
             for pattern in patterns['startswith']:
@@ -80,20 +93,30 @@ def find_columns_by_pattern(df, patterns):
              for pattern in patterns['endswith']:
                 if col.endswith(pattern) and col not in cols_to_match:
                     cols_to_match.append(col)
-    return cols_to_match
+
+    return list(set(cols_to_match)) 
+
 
 def impute_zeros_task(input_path, output_path, config):
-    """Airflow task: reads CSV, imputes with 0 according to patterns, and writes CSV."""
+    """Airflow task: reads CSV, imputes with 0 on specified columns, and writes CSV."""
     print("--- Starting zero imputation task ---")
     df = pd.read_csv(input_path, sep=';')
-    patterns = config['zero_fill_patterns']
-    # We use the helper function to find the columns
-    cols_for_zero = find_columns_by_pattern(df, patterns)
-    # We use your helper function to impute
+
+    # Creamos una configuración específica para esta tarea
+    zero_fill_config = {
+        'patterns': config.get('zero_fill_patterns', {}),
+        'exact_columns': config.get('zero_fill_exact_columns', [])
+    }
+
+    # Usamos la nueva función inteligente
+    cols_for_zero = find_columns_for_imputation(df, zero_fill_config)
+
+    print(f"Found {len(cols_for_zero)} columns to impute with zero: {cols_for_zero}") # <-- Añade este print para depurar
+
     df_processed = impute_with_constant(df, cols_for_zero, fill_value=0)
     df_processed.to_csv(output_path, sep=';', index=False)
     print(f"Task finished. Data saved to {output_path}")
-
+    
 #def impute_medians_task(input_path, output_path, config):
 #    """Airflow task: reads CSV, imputes with median on specific columns, and writes CSV."""
 #    print("--- Starting median imputation task ---")

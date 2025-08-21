@@ -1,0 +1,44 @@
+{
+  "preprocessing": {
+    "imputation": {
+      "zero_fill_patterns": {
+        "endswith": ["_Mean"],
+        "startswith": ["change_", "avg6"]
+      },
+      "zero_fill_exact_columns": [
+        "truck",
+        "rv",
+        "forgntvl"
+      ],
+      "median_fill_columns": [
+        "hnd_price",
+        "lor",
+        "adults",
+        "income",
+        "numbcars"
+      ],
+      "categorical_fill_value": "UNKN"
+    },
+    "null_flags": {
+      "columns": [
+        "infobase",
+        "rev_Mean",
+        "hnd_price",
+        "change_rev",
+        "avg6rev",
+        "lor",
+        "adults",
+        "income",
+        "numbcars"
+      ]
+    }
+  },
+  "feature_selection": {
+    "k": 50,
+    "method": "RandomForest"
+  },
+  "model_training": {
+    "model_name": "RandomForestClassifier",
+    "n_estimators": 150
+  }
+}
