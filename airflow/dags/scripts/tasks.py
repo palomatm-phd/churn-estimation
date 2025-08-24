@@ -43,16 +43,26 @@ def impute_zeros_task(input_path, output_path, config):
     print("--- Starting zero imputation task ---")
     df = pd.read_csv(input_path, sep=';')
 
-    # Creamos una configuración específica para esta tarea
+    # --- LÍNEAS DE DEPURACIÓN ---
+    print("\n--- DEBUGGING: Column Search ---")
+    print(f"Total columns available in DataFrame ({len(df.columns)}):")
+    print(df.columns.tolist())
+    
+    # CORRECCIÓN IMPORTANTE: Accedemos a la configuración anidada correctamente
+    imputation_config = config.get('preprocessing', {}).get('imputation', {})
+    
     zero_fill_config = {
-        'patterns': config.get('zero_fill_patterns', {}),
-        'exact_columns': config.get('zero_fill_exact_columns', [])
+        'patterns': imputation_config.get('zero_fill_patterns', {}),
+        'exact_columns': imputation_config.get('zero_fill_exact_columns', [])
     }
+    print(f"\nConfiguration being used for search: {zero_fill_config}")
+    print("--- END DEBUGGING ---\n")
+    # ------------------------------------
 
-    # Usamos la nueva función inteligente
+    # Usamos la función inteligente de la librería para encontrar las columnas
     cols_for_zero = find_columns_for_imputation(df, zero_fill_config)
 
-    print(f"Found {len(cols_for_zero)} columns to impute with zero: {cols_for_zero}") # <-- Añade este print para depurar
+    print(f"Found {len(cols_for_zero)} columns to impute with zero: {cols_for_zero}")
 
     df_processed = impute_with_constant(df, cols_for_zero, fill_value=0)
     df_processed.to_csv(output_path, sep=';', index=False)
