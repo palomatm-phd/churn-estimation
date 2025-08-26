@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 import math
 from pandas.api.types import is_numeric_dtype
 import seaborn as sns
+from typing import List, Optional, Tuple
+import re
 
 def calcular_nulos(df):
     """
@@ -461,3 +463,116 @@ def detectar_y_convertir_categoricas(df: pd.DataFrame, umbral_discreta: int = 20
     print("Columnas convertidas:", variables_convertidas)
     
     return df_copia
+
+def binarizar_numericas_continuas(df: pd.DataFrame, columnas: List[str], q: int = 5):
+    """
+    Binariza una o varias columnas numéricas continuas creando nuevas columnas con rangos de cuantiles.
+    
+    - Las columnas originales con suficientes valores para el binning se eliminan para evitar colinealidad.
+    - Si una columna no tiene suficientes valores únicos para los 'q' cuantiles,
+      se mantendrá en el DataFrame original.
+    
+    Parámetros:
+    df (pd.DataFrame): El DataFrame que contiene los datos.
+    columnas (List[str]): Una lista de nombres de columnas numéricas a transformar.
+    q (int): El número de cuantiles (bins) para la discretización.
+
+    Retorna:
+    pd.DataFrame: El DataFrame con las nuevas columnas binarizadas.
+    """
+    df_copy = df.copy()
+    
+    for columna in columnas:
+        if columna not in df_copy.columns:
+            print(f"Advertencia: La columna '{columna}' no se encuentra en el DataFrame. Saltando.")
+            continue
+        if not is_numeric_dtype(df_copy[columna]):
+            print(f"Advertencia: La columna '{columna}' no es numérica. Saltando.")
+            continue
+
+        columna_rango = f'{columna}_rango'
+        
+        try:
+            # pd.qcut ignora los NaNs por defecto. `duplicates='drop'` maneja valores repetidos.
+            df_copy[columna_rango] = pd.qcut(df_copy[columna], q=q, duplicates='drop').astype('category')
+            
+            # Eliminar la columna original si la binarización fue exitosa
+            df_copy.drop(columns=[columna], inplace=True)
+            
+            print(f"La columna '{columna}' fue binarizada en {q} rangos y se guardó en '{columna_rango}'.")
+            
+        except ValueError as e:
+            print(f"Advertencia: No se pudo binarizar la columna '{columna}': {e}")
+            print(f"Se mantendrá la columna '{columna}' sin cambios.")
+            
+    return df_copy
+
+def binarizar_por_cuantiles(df: pd.DataFrame, columna: str, q: int = 5, labels: Optional[List[str]] = None) -> Tuple[pd.DataFrame, Optional[List]]:
+    """
+    Binariza una columna numérica en cuantiles, creando una nueva columna categórica
+    y devuelve la lista de bins para usarla en un conjunto de datos diferente.
+    
+    Parámetros:
+    df (pd.DataFrame): El DataFrame que contiene los datos.
+    columna (str): El nombre de la columna numérica a binarizar.
+    q (int): El número de cuantiles (bins) para la discretización.
+    labels (List[str], opcional): Una lista de etiquetas para los bins.
+                                    Si es None, se usarán etiquetas por defecto.
+
+    Retorna:
+    Tuple: Una tupla que contiene:
+           - pd.DataFrame: El DataFrame con la nueva columna binarizada.
+           - Optional[List]: La lista de los bins generados por pd.qcut.
+    """
+    if columna not in df.columns:
+        print(f"Error: La columna '{columna}' no se encuentra en el DataFrame.")
+        return df, None
+    if not is_numeric_dtype(df[columna]):
+        print(f"Error: La columna '{columna}' no es numérica.")
+        return df, None
+
+    df_copy = df.copy()
+    columna_binned = f'{columna}_binned'
+
+    if labels and len(labels) != q:
+        print(f"Advertencia: La longitud de las etiquetas ({len(labels)}) no coincide con el número de cuantiles ({q}). Se usarán etiquetas por defecto.")
+        labels = None
+    
+    try:
+        # qcut devuelve los bins como un índice Categórico
+        binned_series, bins = pd.qcut(df_copy[columna], q=q, labels=labels, duplicates='drop', retbins=True)
+        df_copy[columna_binned] = binned_series
+        
+        # Eliminar la columna original para evitar colinealidad
+        df_copy.drop(columns=[columna], inplace=True)
+        
+        print(f"La columna '{columna}' fue binarizada en {q} rangos y se guardó en '{columna_binned}'.")
+        return df_copy, bins.tolist()
+    
+    except ValueError as e:
+        print(f"Advertencia: No se pudo binarizar la columna '{columna}': {e}")
+        print(f"Se mantendrá la columna '{columna}' sin cambios.")
+        return df, None
+
+def sanitizar_nombres_columnas(df: pd.DataFrame):
+    """
+    Sanitiza los nombres de las columnas de un DataFrame para que sean compatibles
+    con LightGBM/XGBoost, eliminando caracteres especiales.
+    
+    Args:
+        df (pd.DataFrame): El DataFrame con columnas que necesitan limpieza.
+        
+    Returns:
+        pd.DataFrame: El DataFrame con los nombres de columnas limpios.
+    """
+    df_copy = df.copy()
+    new_columns = []
+    for col in df_copy.columns:
+        # Reemplazar caracteres especiales y espacios con un guion bajo
+        new_col = re.sub(r'[\[\]<>]', '', col)
+        new_col = new_col.replace(' ', '_')
+        new_col = re.sub(r'[^A-Za-z0-9_]+', '', new_col)
+        new_columns.append(new_col)
+    
+    df_copy.columns = new_columns
+    return df_copy
