@@ -1,4 +1,9 @@
 {
+  "general": {
+    "target": "churn",
+    "test_size": 0.2,
+    "random_state": 42
+  },
   "preprocessing": {
     "row_removal": {
       "null_subset_cols": [
@@ -13,17 +18,58 @@
         "ovrrev_Mean", 
         "vceovr_Mean", 
         "datovr_Mean", 
-        "roam_Mean"]
+        "roam_Mean"
+      ]
     },
     "negative_values": {
-      "exception_cols": ["change_rev", "change_mou"]
+      "exception_cols": [
+        "change_rev",
+        "change_mou"
+      ]
+    },
+    "column_removal": {
+      "irrelevant_columns": [
+        "peak_dat_Mean",
+        "mou_cdat_Mean",
+        "opk_dat_Mean",
+        "mou_opkd_Mean",
+        "datovr_Mean",
+        "drop_dat_Mean",
+        "blck_dat_Mean",
+        "unan_dat_Mean",
+        "plcd_dat_Mean",
+        "comp_dat_Mean",
+        "recv_sms_Mean",
+        "mou_pead_Mean",
+        "roam_Mean",
+        "callfwdv_Mean",
+        "new_cell",
+        "truck",
+        "rv",
+        "dwlltype",
+        "forgntvl",
+        "creditcd",
+        "kid0_2",
+        "kid3_5",
+        "kid6_10",
+        "kid11_15",
+        "kid16_17"
+      ]
     },
     "imputation": {
       "zero_fill_patterns": {
         "endswith": [],
         "startswith": []
       },
-      "zero_fill_exact_columns": [
+      "unkn_fill_exact_columns": [
+        "prizm_social_one", 
+        "hnd_webcap", 
+        "ownrent", 
+        "lor", 
+        "dwlltype", 
+        "HHstatin", 
+        "dwllsize",
+        "ethnic"
       ],
       "median_fill_columns": [
         "change_mou",

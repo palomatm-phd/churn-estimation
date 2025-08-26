@@ -6,7 +6,7 @@ from churn_library.processing_helpers import (
     create_null_flags,
     remove_rows_with_any_null,
     clean_negatives)
-
+from sklearn.model_selection import train_test_split
 
 def remove_rows_with_any_null_task(input_path, output_path, config):
     """Airflow task: removes rows where specified subset columns are null."""
@@ -48,7 +48,6 @@ def impute_zeros_task(input_path, output_path, config):
     print(f"Total columns available in DataFrame ({len(df.columns)}):")
     print(df.columns.tolist())
     
-    # CORRECCIÓN IMPORTANTE: Accedemos a la configuración anidada correctamente
     imputation_config = config.get('preprocessing', {}).get('imputation', {})
     
     zero_fill_config = {
@@ -142,3 +141,103 @@ def create_null_flags_task(input_path, output_path, config):
     
     df_processed.to_csv(output_path, sep=';', index=False)
     print(f"Task finished. Data with null flags saved to {output_path}")
+
+def train_test_split_task(input_path, train_output_path, test_output_path, config):
+    """
+    Lee un archivo CSV, divide los datos en sets de entrenamiento y prueba,
+    y los guarda en archivos CSV separados.
+    """
+    print(f"Leyendo datos desde: {input_path}")
+    df = pd.read_csv(input_path, sep=';')
+
+    target = config['general']['target']
+
+    X = df.drop(columns=[target])
+    y = df[target]
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=config['general']['test_size'], random_state=config['general']['random_state']
+    )
+
+    train_df = pd.concat([X_train, y_train], axis=1)
+    test_df = pd.concat([X_test, y_test], axis=1)
+
+    print(f"Guardando set de entrenamiento en: {train_output_path}")
+    train_df.to_csv(train_output_path, sep=';', index=False)
+    
+    print(f"Guardando set de prueba en: {test_output_path}")
+    test_df.to_csv(test_output_path, sep=';', index=False)
+
+    print("División de datos completada.")
+
+def impute_with_unkn_task(input_path, output_path, config):
+    """Airflow task: reads CSV, imputes categorical columns with 'UNKN', and writes CSV."""
+    print("--- Starting categorical imputation task ---")
+    df = pd.read_csv(input_path, sep=';')
+    fill_value = config['preprocessing']['imputation']['categorical_fill_value']
+    cols_for_unkn = config['preprocessing']['imputation']['unkn_fill_exact_columns']
+    # We use your helper function to impute
+    df_processed = impute_with_constant(df, cols_for_unkn, fill_value=fill_value)
+    df_processed.to_csv(output_path, sep=';', index=False)
+    print(f"Task finished. Data saved to {output_path}")
+
+
+def remove_columns_task(input_path, output_path, config):
+    """
+    Lee un archivo CSV, elimina las columnas especificadas y guarda el resultado.
+    """
+    print(f"Leyendo datos desde: {input_path}")
+    df = pd.read_csv(input_path, sep=';')
+
+    columns_to_drop = config['preprocessing']['column_removal']['irrelevant_columns']
+
+    print(f"Eliminando {len(columns_to_drop)} columnas irrelevantes...")
+    df_clean = df.drop(columns=columns_to_drop, errors='ignore')
+    
+    print(f"Columnas eliminadas. El nuevo DataFrame tiene {df_clean.shape[1]} columnas.")
+    print(f"Guardando el resultado en: {output_path}")
+    df_clean.to_csv(output_path, sep=';', index=False)
+
+    return output_path
+
+def impute_all_nulls_task(input_path, output_path, imputation_values_path, config):
+    """
+    Lee un CSV y realiza una imputación doble:
+    1. Rellena columnas categóricas específicas con un valor constante (UNKN).
+    2. Rellena columnas numéricas específicas con la mediana calculada del set de entrenamiento.
+    """
+    print("--- Iniciando la tarea de imputación consolidada ---")
+    
+    # Leer el DataFrame
+    df = pd.read_csv(input_path, sep=';')
+    
+    # Cargar los valores de imputación (medianas) calculados previamente
+    with open(imputation_values_path, 'r') as f:
+        imputation_values_from_train = json.load(f)
+
+    # 1. Imputar columnas categóricas con el valor constante 'UNKN'
+    fill_value = config['preprocessing']['imputation']['categorical_fill_value']
+    cols_for_unkn = config['preprocessing']['imputation']['unkn_fill_exact_columns']
+    
+    for col in cols_for_unkn:
+        df[col].fillna(fill_value, inplace=True)
+        
+    print(f"Imputación de columnas categóricas completada con el valor: '{fill_value}'")
+
+    # 2. Imputar columnas numéricas con la mediana
+    columns_impute_median = config['preprocessing']['imputation']['median_fill_columns']
+
+    for col in columns_impute_median:
+        if col in imputation_values_from_train.keys():
+            value = imputation_values_from_train[col]
+            df[col].fillna(value, inplace=True)
+        
+    print(f"Imputación de columnas numéricas con la mediana completada.")
+    
+    # Verificar que no queden nulos después de la imputación
+    print("\nVerificación final de nulos:")
+    print(df[cols_for_unkn + columns_impute_median].isnull().sum())
+    
+    # Guardar el DataFrame final
+    df.to_csv(output_path, sep=';', index=False)
+    print(f"\nTarea finalizada. Datos guardados en: {output_path}")
