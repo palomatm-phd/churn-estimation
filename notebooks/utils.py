@@ -433,3 +433,31 @@ def plot_tasa_churn_numerica(df, columna, ax, target='churn', q=5):
     except ValueError as e:
         ax.text(0.5, 0.5, f"No se pudo binnear '{columna}'\n{e}", ha='center', va='center')
 
+def detectar_y_convertir_categoricas(df: pd.DataFrame, umbral_discreta: int = 20):
+    """
+    Detecta columnas numéricas que en realidad son discretas/categóricas
+    y las convierte a tipo 'category'.
+    
+    Parámetros:
+    df (pd.DataFrame): El DataFrame que contiene los datos.
+    umbral_discreta (int): El número de valores únicos por debajo del cual
+                           una variable numérica es considerada categórica.
+    
+    Retorna:
+    tuple: Una tupla con (el DataFrame con las conversiones, la lista de columnas convertidas).
+    """
+    df_copia = df.copy()
+    variables_convertidas = []
+
+    for col in df_copia.columns:
+        if is_numeric_dtype(df_copia[col]) and col != 'churn':
+            num_valores_unicos = df_copia[col].nunique()
+
+            if num_valores_unicos <= umbral_discreta:
+                df_copia[col] = df_copia[col].astype('category')
+                variables_convertidas.append(col)
+    
+    print(f"Conversión completada. Se convirtieron {len(variables_convertidas)} columnas a tipo 'category'.")
+    print("Columnas convertidas:", variables_convertidas)
+    
+    return df_copia
