@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 import math
 from pandas.api.types import is_numeric_dtype
 import seaborn as sns
+from typing import List, Optional, Tuple
+import re
 
 def calcular_nulos(df):
     """
@@ -207,8 +209,7 @@ def graficar_distribuciones_categoricas(df: pd.DataFrame, columnas: list, n_cols
 
 def analizar_churn_categorica(df: pd.DataFrame, columna: str, target: str = 'churn'):
     """
-    Versión mejorada que analiza y visualiza la tasa de churn para una variable categórica
-    con dos gráficos: distribución y tasa de churn.
+    Versión mejorada que analiza y visualiza el total de churn para una variable categórica.
     """
     if columna not in df.columns:
         print(f"Error: La columna '{columna}' no se encuentra en el DataFrame.")
@@ -216,42 +217,41 @@ def analizar_churn_categorica(df: pd.DataFrame, columna: str, target: str = 'chu
 
     print(f"--- Análisis de Churn para la Variable Categórica: '{columna}' ---")
 
-    tasa_churn_general = df[target].mean()
-    analisis = df.groupby(columna)[target].agg(['mean', 'count']).rename(
-        columns={'mean': 'Tasa de Churn', 'count': 'Total Clientes'}
-    ).sort_values(by='Tasa de Churn', ascending=False)
+    # Agregando el total de churn a la tabla de análisis
+    analisis = df.groupby(columna).agg(
+        {'churn': ['mean', 'count', 'sum']}
+    ).rename(
+        columns={'mean': 'Tasa de Churn', 'count': 'Total Clientes', 'sum': 'Total Churn'}
+    )
+    analisis.columns = analisis.columns.droplevel(0)
+    analisis = analisis.sort_values(by='Total Churn', ascending=False)
     
     print(analisis)
     print("\n")
 
-    # --- Creación de la visualización con dos subplots ---
-    fig, axes = plt.subplots(1, 2, figsize=(18, 7))
-    fig.suptitle(f'Análisis de Churn por "{columna}"', fontsize=18, weight='bold')
+    # --- Creación de la visualización con un solo plot ---
+    fig, ax = plt.subplots(figsize=(12, 7))
+    fig.suptitle(f'Total de Clientes con Churn por "{columna}"', fontsize=16, weight='bold')
 
-    # Gráfico 1: Distribución de Clientes
-    sns.barplot(x=analisis.index, y=analisis['Total Clientes'], ax=axes[0], palette='viridis', hue=analisis.index)
-    axes[0].set_title('Distribución de Clientes por Categoría', fontsize=14)
-    axes[0].set_xlabel(columna, fontsize=12)
-    axes[0].set_ylabel('Número de Clientes', fontsize=12)
-    axes[0].tick_params(axis='x', rotation=45)
+    # Gráfico que muestra el número absoluto de clientes con churn
+    sns.barplot(x=analisis.index, y=analisis['Total Churn'], ax=ax, palette='plasma', hue=analisis.index)
+    ax.set_title(f'Número Absoluto de Clientes con Churn por Categoría', fontsize=14)
+    ax.set_xlabel(columna, fontsize=12)
+    ax.set_ylabel('Número Total de Clientes con Churn', fontsize=12)
+    ax.tick_params(axis='x', rotation=45)
 
-    # Gráfico 2: Tasa de Churn
-    sns.barplot(x=analisis.index, y=analisis['Tasa de Churn'], ax=axes[1], palette='plasma', hue=analisis.index)
-    axes[1].axhline(tasa_churn_general, color='red', linestyle='--', 
-                    label=f'Tasa General ({tasa_churn_general:.2%})')
-    axes[1].set_title('Tasa de Churn por Categoría', fontsize=14)
-    axes[1].set_xlabel(columna, fontsize=12)
-    axes[1].set_ylabel('Tasa de Churn', fontsize=12)
-    axes[1].tick_params(axis='x', rotation=45)
-    axes[1].legend()
+    # Añadir las etiquetas de valor en las barras para mayor claridad
+    for container in ax.containers:
+        ax.bar_label(container, fmt='%.0f', fontsize=10)
 
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95]) # Ajustar para el título principal
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
 
-def analizar_churn_numerica(df: pd.DataFrame, columna: str, target: str = 'churn', q: int = 5):
+def analizar_churn_numerica(df: pd.DataFrame, columna: str, target: str = 'churn', q: int = 5, umbral_discreta: int = 20):
     """
-    Versión mejorada que analiza y visualiza la tasa de churn para una variable numérica
-    con dos gráficos: distribución por churn y tasa de churn por rangos.
+    Versión mejorada que analiza y visualiza el total de churn para una variable numérica.
+    Detecta automáticamente si la variable es discreta o continua. Para las discretas,
+    las ordena por valor.
     """
     if columna not in df.columns:
         print(f"Error: La columna '{columna}' no se encuentra en el DataFrame.")
@@ -264,43 +264,76 @@ def analizar_churn_numerica(df: pd.DataFrame, columna: str, target: str = 'churn
     
     df_copy = df.copy()
     
-    # --- Creación de la visualización con dos subplots ---
-    fig, axes = plt.subplots(1, 2, figsize=(18, 7))
-    fig.suptitle(f'Análisis de Churn por "{columna}"', fontsize=18, weight='bold')
-
-    # Gráfico 1: Distribución de la variable por valor de Churn
-    sns.histplot(data=df_copy, x=columna, hue=target, multiple="dodge", kde=True, ax=axes[0], palette='coolwarm')
-    axes[0].set_title(f'Distribución de "{columna}" por Churn', fontsize=14)
-    axes[0].set_xlabel(columna, fontsize=12)
-    axes[0].set_ylabel('Frecuencia', fontsize=12)
-    
-    # Gráfico 2: Tasa de Churn por rangos de la variable
-    columna_binned = f'{columna}_rango'
-    try:
-        df_copy[columna_binned] = pd.qcut(df_copy[columna], q=q, duplicates='drop')
+    # Lógica para determinar si la variable es discreta o continua
+    if df[columna].nunique() <= umbral_discreta:
+        print(f"La columna '{columna}' es tratada como discreta (<= {umbral_discreta} valores únicos).")
         
-        tasa_churn_general = df_copy[target].mean()
-        analisis_binned = df_copy.groupby(columna_binned)[target].agg(['mean', 'count']).rename(
-            columns={'mean': 'Tasa de Churn', 'count': 'Total Clientes'}
+        # Agregando el total de churn a la tabla de análisis
+        analisis = df_copy.groupby(columna).agg(
+            {'churn': ['mean', 'count', 'sum']}
+        ).rename(
+            columns={'mean': 'Tasa de Churn', 'count': 'Total Clientes', 'sum': 'Total Churn'}
         )
+        analisis.columns = analisis.columns.droplevel(0)
         
-        print("Análisis por rangos:")
-        print(analisis_binned)
+        # Ordenar por el valor de la variable, no por la cantidad de churn
+        analisis.sort_index(inplace=True)
+        
+        print(analisis)
         print("\n")
-
-        sns.barplot(x=analisis_binned.index, y=analisis_binned['Tasa de Churn'], ax=axes[1], palette='rocket', hue=analisis_binned.index)
-        axes[1].axhline(tasa_churn_general, color='blue', linestyle='--', 
-                        label=f'Tasa General ({tasa_churn_general:.2%})')
-        axes[1].set_title(f'Tasa de Churn por Rangos de "{columna}"', fontsize=14)
-        axes[1].set_xlabel(f'Rangos de {columna} ({q} cuantiles)', fontsize=12)
-        axes[1].set_ylabel('Tasa de Churn', fontsize=12)
-        axes[1].tick_params(axis='x', rotation=45)
-        axes[1].legend()
-
-    except ValueError as e:
-        axes[1].text(0.5, 0.5, f"No se pudo generar el gráfico de rangos:\n{e}", 
-                     ha='center', va='center', transform=axes[1].transAxes)
         
+        # --- Creación del gráfico ---
+        fig, ax = plt.subplots(figsize=(12, 7))
+        fig.suptitle(f'Total de Clientes con Churn por "{columna}" (Valores Discretos)', fontsize=16, weight='bold')
+
+        sns.barplot(x=analisis.index.astype(str), y=analisis['Total Churn'], ax=ax, palette='plasma', hue=analisis.index.astype(str))
+        ax.set_title(f'Número Absoluto de Clientes con Churn por "{columna}"', fontsize=14)
+        ax.set_xlabel(columna, fontsize=12)
+        ax.set_ylabel('Número Total de Clientes con Churn', fontsize=12)
+        ax.tick_params(axis='x', rotation=45)
+        
+        for container in ax.containers:
+            ax.bar_label(container, fmt='%.0f', fontsize=10)
+    
+    else:
+        print(f"La columna '{columna}' es tratada como continua (> {umbral_discreta} valores únicos).")
+        
+        # --- Creación del gráfico ---
+        fig, ax = plt.subplots(figsize=(12, 7))
+        fig.suptitle(f'Total de Clientes con Churn por "{columna}" (Rangos Cuantiles)', fontsize=16, weight='bold')
+
+        columna_binned = f'{columna}_rango'
+        try:
+            df_copy[columna_binned] = pd.qcut(df_copy[columna], q=q, duplicates='drop')
+            
+            # Agregando el total de churn a la tabla de análisis
+            analisis_binned = df_copy.groupby(columna_binned).agg(
+                {'churn': ['mean', 'count', 'sum']}
+            ).rename(
+                columns={'mean': 'Tasa de Churn', 'count': 'Total Clientes', 'sum': 'Total Churn'}
+            )
+            analisis_binned.columns = analisis_binned.columns.droplevel(0)
+            
+            # Ordenar por el valor del bin, no por la cantidad de churn
+            # La línea de sort_values ha sido eliminada.
+            
+            print("Análisis por rangos:")
+            print(analisis_binned)
+            print("\n")
+
+            sns.barplot(x=analisis_binned.index.astype(str), y=analisis_binned['Total Churn'], ax=ax, palette='rocket', hue=analisis_binned.index.astype(str))
+            ax.set_title(f'Número Absoluto de Clientes con Churn por Rangos de "{columna}"', fontsize=14)
+            ax.set_xlabel(f'Rangos de {columna} ({q} cuantiles)', fontsize=12)
+            ax.set_ylabel('Número Total de Clientes con Churn', fontsize=12)
+            ax.tick_params(axis='x', rotation=45)
+            
+            for container in ax.containers:
+                ax.bar_label(container, fmt='%.0f', fontsize=10)
+
+        except ValueError as e:
+            ax.text(0.5, 0.5, f"No se pudo generar el gráfico de rangos:\n{e}", 
+                     ha='center', va='center', transform=ax.transAxes)
+            
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
 
@@ -401,3 +434,145 @@ def plot_tasa_churn_numerica(df, columna, ax, target='churn', q=5):
         
     except ValueError as e:
         ax.text(0.5, 0.5, f"No se pudo binnear '{columna}'\n{e}", ha='center', va='center')
+
+def detectar_y_convertir_categoricas(df: pd.DataFrame, umbral_discreta: int = 20):
+    """
+    Detecta columnas numéricas que en realidad son discretas/categóricas
+    y las convierte a tipo 'category'.
+    
+    Parámetros:
+    df (pd.DataFrame): El DataFrame que contiene los datos.
+    umbral_discreta (int): El número de valores únicos por debajo del cual
+                           una variable numérica es considerada categórica.
+    
+    Retorna:
+    tuple: Una tupla con (el DataFrame con las conversiones, la lista de columnas convertidas).
+    """
+    df_copia = df.copy()
+    variables_convertidas = []
+
+    for col in df_copia.columns:
+        if is_numeric_dtype(df_copia[col]) and col != 'churn':
+            num_valores_unicos = df_copia[col].nunique()
+
+            if num_valores_unicos <= umbral_discreta:
+                df_copia[col] = df_copia[col].astype('category')
+                variables_convertidas.append(col)
+    
+    print(f"Conversión completada. Se convirtieron {len(variables_convertidas)} columnas a tipo 'category'.")
+    print("Columnas convertidas:", variables_convertidas)
+    
+    return df_copia
+
+def binarizar_numericas_continuas(df: pd.DataFrame, columnas: List[str], q: int = 5):
+    """
+    Binariza una o varias columnas numéricas continuas creando nuevas columnas con rangos de cuantiles.
+    
+    - Las columnas originales con suficientes valores para el binning se eliminan para evitar colinealidad.
+    - Si una columna no tiene suficientes valores únicos para los 'q' cuantiles,
+      se mantendrá en el DataFrame original.
+    
+    Parámetros:
+    df (pd.DataFrame): El DataFrame que contiene los datos.
+    columnas (List[str]): Una lista de nombres de columnas numéricas a transformar.
+    q (int): El número de cuantiles (bins) para la discretización.
+
+    Retorna:
+    pd.DataFrame: El DataFrame con las nuevas columnas binarizadas.
+    """
+    df_copy = df.copy()
+    
+    for columna in columnas:
+        if columna not in df_copy.columns:
+            print(f"Advertencia: La columna '{columna}' no se encuentra en el DataFrame. Saltando.")
+            continue
+        if not is_numeric_dtype(df_copy[columna]):
+            print(f"Advertencia: La columna '{columna}' no es numérica. Saltando.")
+            continue
+
+        columna_rango = f'{columna}_rango'
+        
+        try:
+            # pd.qcut ignora los NaNs por defecto. `duplicates='drop'` maneja valores repetidos.
+            df_copy[columna_rango] = pd.qcut(df_copy[columna], q=q, duplicates='drop').astype('category')
+            
+            # Eliminar la columna original si la binarización fue exitosa
+            df_copy.drop(columns=[columna], inplace=True)
+            
+            print(f"La columna '{columna}' fue binarizada en {q} rangos y se guardó en '{columna_rango}'.")
+            
+        except ValueError as e:
+            print(f"Advertencia: No se pudo binarizar la columna '{columna}': {e}")
+            print(f"Se mantendrá la columna '{columna}' sin cambios.")
+            
+    return df_copy
+
+def binarizar_por_cuantiles(df: pd.DataFrame, columna: str, q: int = 5, labels: Optional[List[str]] = None) -> Tuple[pd.DataFrame, Optional[List]]:
+    """
+    Binariza una columna numérica en cuantiles, creando una nueva columna categórica
+    y devuelve la lista de bins para usarla en un conjunto de datos diferente.
+    
+    Parámetros:
+    df (pd.DataFrame): El DataFrame que contiene los datos.
+    columna (str): El nombre de la columna numérica a binarizar.
+    q (int): El número de cuantiles (bins) para la discretización.
+    labels (List[str], opcional): Una lista de etiquetas para los bins.
+                                    Si es None, se usarán etiquetas por defecto.
+
+    Retorna:
+    Tuple: Una tupla que contiene:
+           - pd.DataFrame: El DataFrame con la nueva columna binarizada.
+           - Optional[List]: La lista de los bins generados por pd.qcut.
+    """
+    if columna not in df.columns:
+        print(f"Error: La columna '{columna}' no se encuentra en el DataFrame.")
+        return df, None
+    if not is_numeric_dtype(df[columna]):
+        print(f"Error: La columna '{columna}' no es numérica.")
+        return df, None
+
+    df_copy = df.copy()
+    columna_binned = f'{columna}_binned'
+
+    if labels and len(labels) != q:
+        print(f"Advertencia: La longitud de las etiquetas ({len(labels)}) no coincide con el número de cuantiles ({q}). Se usarán etiquetas por defecto.")
+        labels = None
+    
+    try:
+        # qcut devuelve los bins como un índice Categórico
+        binned_series, bins = pd.qcut(df_copy[columna], q=q, labels=labels, duplicates='drop', retbins=True)
+        df_copy[columna_binned] = binned_series
+        
+        # Eliminar la columna original para evitar colinealidad
+        df_copy.drop(columns=[columna], inplace=True)
+        
+        print(f"La columna '{columna}' fue binarizada en {q} rangos y se guardó en '{columna_binned}'.")
+        return df_copy, bins.tolist()
+    
+    except ValueError as e:
+        print(f"Advertencia: No se pudo binarizar la columna '{columna}': {e}")
+        print(f"Se mantendrá la columna '{columna}' sin cambios.")
+        return df, None
+
+def sanitizar_nombres_columnas(df: pd.DataFrame):
+    """
+    Sanitiza los nombres de las columnas de un DataFrame para que sean compatibles
+    con LightGBM/XGBoost, eliminando caracteres especiales.
+    
+    Args:
+        df (pd.DataFrame): El DataFrame con columnas que necesitan limpieza.
+        
+    Returns:
+        pd.DataFrame: El DataFrame con los nombres de columnas limpios.
+    """
+    df_copy = df.copy()
+    new_columns = []
+    for col in df_copy.columns:
+        # Reemplazar caracteres especiales y espacios con un guion bajo
+        new_col = re.sub(r'[\[\]<>]', '', col)
+        new_col = new_col.replace(' ', '_')
+        new_col = re.sub(r'[^A-Za-z0-9_]+', '', new_col)
+        new_columns.append(new_col)
+    
+    df_copy.columns = new_columns
+    return df_copy
