@@ -1,0 +1,49 @@
+{
+  "general": {
+  },
+  "column_removal": {
+    "irrelevant_columns": [
+      "peak_dat_Mean",
+      "mou_cdat_Mean",
+      "opk_dat_Mean",
+      "mou_opkd_Mean",
+      "drop_dat_Mean",
+      "blck_dat_Mean",
+      "unan_dat_Mean",
+      "plcd_dat_Mean",
+      "comp_dat_Mean",
+      "recv_sms_Mean",
+      "mou_pead_Mean",
+      "roam_Mean",
+      "callfwdv_Mean",
+      "new_cell",
+      "truck",
+      "rv",
+      "dwlltype",
+      "forgntvl",
+      "creditcd",
+      "kid0_2",
+      "kid3_5",
+      "kid6_10",
+      "kid11_15",
+      "kid16_17",
+      "adjrev",
+      "adjmou",
+      "adjqty",
+      "avg3mou",
+      "avg3qty",
+      "avg3rev",
+      "avg6mou",
+      "avg6qty",
+      "avg6rev",
+      "ccrndmou_Mean"
+    ]
+  },
+  "binning": {
+    "columns": [
+      "eqpdays",
+      "months"
+    ],
+    "quantiles": 5
+  }
+}

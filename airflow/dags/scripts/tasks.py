@@ -1,5 +1,6 @@
 import json
 import pandas as pd
+from sklearn.model_selection import train_test_split
 from churn_library.processing_helpers import (
     find_columns_for_imputation, 
     impute_with_constant, 
@@ -7,7 +8,9 @@ from churn_library.processing_helpers import (
     remove_rows_with_any_null,
     clean_negatives)
 
+from churn_library.feature_helpers import create_new_features, binarize_and_align_quantiles
 
+#======PROCESSING TASKS=========
 def remove_rows_with_any_null_task(input_path, output_path, config):
     """Airflow task: removes rows where specified subset columns are null."""
     print("--- Starting task: remove rows with any null ---")
@@ -48,7 +51,6 @@ def impute_zeros_task(input_path, output_path, config):
     print(f"Total columns available in DataFrame ({len(df.columns)}):")
     print(df.columns.tolist())
     
-    # CORRECCIÓN IMPORTANTE: Accedemos a la configuración anidada correctamente
     imputation_config = config.get('preprocessing', {}).get('imputation', {})
     
     zero_fill_config = {
@@ -142,3 +144,231 @@ def create_null_flags_task(input_path, output_path, config):
     
     df_processed.to_csv(output_path, sep=';', index=False)
     print(f"Task finished. Data with null flags saved to {output_path}")
+
+def train_test_split_task(input_path, train_output_path, test_output_path, config):
+    """
+    Lee un archivo CSV, divide los datos en sets de entrenamiento y prueba,
+    y los guarda en archivos CSV separados.
+    """
+    print(f"Leyendo datos desde: {input_path}")
+    df = pd.read_csv(input_path, sep=';')
+
+    target = config['general']['target']
+
+    X = df.drop(columns=[target])
+    y = df[target]
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=config['general']['test_size'], random_state=config['general']['random_state']
+    )
+
+    train_df = pd.concat([X_train, y_train], axis=1)
+    test_df = pd.concat([X_test, y_test], axis=1)
+
+    print(f"Guardando set de entrenamiento en: {train_output_path}")
+    train_df.to_csv(train_output_path, sep=';', index=False)
+    
+    print(f"Guardando set de prueba en: {test_output_path}")
+    test_df.to_csv(test_output_path, sep=';', index=False)
+
+    print("División de datos completada.")
+
+def impute_with_unkn_task(input_path, output_path, config):
+    """Airflow task: reads CSV, imputes categorical columns with 'UNKN', and writes CSV."""
+    print("--- Starting categorical imputation task ---")
+    df = pd.read_csv(input_path, sep=';')
+    fill_value = config['preprocessing']['imputation']['categorical_fill_value']
+    cols_for_unkn = config['preprocessing']['imputation']['unkn_fill_exact_columns']
+    # We use your helper function to impute
+    df_processed = impute_with_constant(df, cols_for_unkn, fill_value=fill_value)
+    df_processed.to_csv(output_path, sep=';', index=False)
+    print(f"Task finished. Data saved to {output_path}")
+
+
+def remove_columns_task(input_path, output_path, config):
+    """
+    Lee un archivo CSV, elimina las columnas especificadas y guarda el resultado.
+    """
+    print(f"Leyendo datos desde: {input_path}")
+    df = pd.read_csv(input_path, sep=';')
+
+    columns_to_drop = config['preprocessing']['column_removal']['irrelevant_columns']
+
+    print(f"Eliminando {len(columns_to_drop)} columnas irrelevantes...")
+    df_clean = df.drop(columns=columns_to_drop, errors='ignore')
+    
+    print(f"Columnas eliminadas. El nuevo DataFrame tiene {df_clean.shape[1]} columnas.")
+    print(f"Guardando el resultado en: {output_path}")
+    df_clean.to_csv(output_path, sep=';', index=False)
+
+    return output_path
+
+def impute_all_nulls_task(input_path, output_path, imputation_values_path, config):
+    """
+    Lee un CSV y realiza una imputación doble:
+    1. Rellena columnas categóricas específicas con un valor constante (UNKN).
+    2. Rellena columnas numéricas específicas con la mediana calculada del set de entrenamiento.
+    """
+    print("--- Iniciando la tarea de imputación consolidada ---")
+    
+    # Leer el DataFrame
+    df = pd.read_csv(input_path, sep=';')
+    
+    # Cargar los valores de imputación (medianas) calculados previamente
+    with open(imputation_values_path, 'r') as f:
+        imputation_values_from_train = json.load(f)
+
+    # 1. Imputar columnas categóricas con el valor constante 'UNKN'
+    fill_value = config['preprocessing']['imputation']['categorical_fill_value']
+    cols_for_unkn = config['preprocessing']['imputation']['unkn_fill_exact_columns']
+    
+    for col in cols_for_unkn:
+        df[col].fillna(fill_value, inplace=True)
+        
+    print(f"Imputación de columnas categóricas completada con el valor: '{fill_value}'")
+
+    # 2. Imputar columnas numéricas con la mediana
+    columns_impute_median = config['preprocessing']['imputation']['median_fill_columns']
+
+    for col in columns_impute_median:
+        if col in imputation_values_from_train.keys():
+            value = imputation_values_from_train[col]
+            df[col].fillna(value, inplace=True)
+        
+    print(f"Imputación de columnas numéricas con la mediana completada.")
+    
+    # Verificar que no queden nulos después de la imputación
+    print("\nVerificación final de nulos:")
+    print(df[cols_for_unkn + columns_impute_median].isnull().sum())
+    
+    # Guardar el DataFrame final
+    df.to_csv(output_path, sep=';', index=False)
+    print(f"\nTarea finalizada. Datos guardados en: {output_path}")
+
+#======FEATURE ENGINEERING TASKS=========
+
+def read_clean_data_task(input_path_train: str, input_path_test: str, output_path_train: str, output_path_test: str, config: dict):
+    """
+    Reads the train and test data sets, removes specified columns,
+    and saves the results to separate CSV files.
+    
+    Args:
+        input_path_train (str): Path to the train set CSV file.
+        input_path_test (str): Path to the test set CSV file.
+        output_path_train (str): Path to save the train set with removed columns.
+        output_path_test (str): Path to save the test set with removed columns.
+        config (dict): Configuration dictionary with the list of columns to remove.
+    
+    Returns:
+        None
+    """
+    print("--- Starting read and column removal task ---")
+    
+    # 1. Read the train and test DataFrames
+    try:
+        df_train = pd.read_csv(input_path_train, sep=';')
+        df_test = pd.read_csv(input_path_test, sep=';')
+    except FileNotFoundError as e:
+        print(f"Error: Could not find an input file. {e}")
+        raise
+        
+    print(f"Data sets read. Train size: {df_train.shape}, Test size: {df_test.shape}")
+    
+    # 2. Get the list of columns to remove from the config file
+    columns_to_drop = config['column_removal']['irrelevant_columns']
+    print(f"Columns to drop: {columns_to_drop}")
+    
+    # 3. Drop the columns from both DataFrames
+    # The 'errors='ignore'' parameter prevents the code from failing if a column doesn't exist
+    df_train_processed = df_train.drop(columns=columns_to_drop, errors='ignore')
+    df_test_processed = df_test.drop(columns=columns_to_drop, errors='ignore')
+    
+    print("Columns dropped.")
+    print(f"New train size: {df_train_processed.shape}, New test size: {df_test_processed.shape}")
+    
+    # 4. Save the processed DataFrames to the output paths
+    df_train_processed.to_csv(output_path_train, sep=';', index=False)
+    df_test_processed.to_csv(output_path_test, sep=';', index=False)
+    
+    print(f"Train set saved to: {output_path_train}")
+    print(f"Test set saved to: {output_path_test}")
+    print("Task completed successfully.")
+
+
+def create_new_features_task(input_path_train, input_path_test, output_path_train, output_path_test):
+    """
+    Reads the train and test sets, applies the feature engineering function,
+    and saves the results.
+    """
+    print(f"Reading train set from: {input_path_train}")
+    df_train = pd.read_csv(input_path_train, sep=';')
+    
+    print(f"Reading test set from: {input_path_test}")
+    df_test = pd.read_csv(input_path_test, sep=';')
+    
+    print("Applying feature engineering to both sets...")
+    df_train_new_features = create_new_features(df_train)
+    df_test_new_features = create_new_features(df_test)
+    
+    print(f"Saving train set to: {output_path_train}")
+    df_train_new_features.to_csv(output_path_train, sep=';', index=False)
+
+    print(f"Saving test set to: {output_path_test}")
+    df_test_new_features.to_csv(output_path_test, sep=';', index=False)
+    
+    print("Feature engineering task completed successfully.")
+
+
+def one_hot_encode_and_align_task(input_path_train, input_path_test, output_path_train, output_path_test, config):
+    """
+    Reads the train and test sets, applies One-Hot Encoding, and aligns their columns.
+    """
+    print("Starting the One-Hot Encoding and column alignment task...")
+    
+    # Read the DataFrames
+    df_train = pd.read_csv(input_path_train, sep=';')
+    df_test = pd.read_csv(input_path_test, sep=';')
+    
+    # Get the list of categorical variables to encode
+    categorical_cols_to_encode = config['preprocessing']['categorical_for_ohe'] # Assumed this list is in the config
+
+    # Perform One-Hot Encoding on the train set
+    df_train_encoded = pd.get_dummies(df_train, columns=categorical_cols_to_encode, drop_first=True)
+    
+    # Save the list of ALL resulting columns
+    final_train_cols = df_train_encoded.columns.tolist()
+
+    # Perform One-Hot Encoding on the test set
+    df_test_encoded = pd.get_dummies(df_test, columns=categorical_cols_to_encode, drop_first=True)
+    
+    # Align the columns of the test set with the train set
+    df_test_aligned = df_test_encoded.reindex(columns=final_train_cols, fill_value=0)
+    
+    print(f"Number of columns in the train set: {df_train_encoded.shape[1]}")
+    print(f"Number of columns in the aligned test set: {df_test_aligned.shape[1]}")
+
+    # Save the processed DataFrames
+    df_train_encoded.to_csv(output_path_train, sep=';', index=False)
+    df_test_aligned.to_csv(output_path_test, sep=';', index=False)
+
+    print("One-Hot Encoding and alignment task completed successfully.")
+
+
+def binarize_and_align_quantiles_task(input_path_train: str, input_path_test: str, output_path_train: str, output_path_test: str, columns_to_bin: List[str], q: int):
+    """
+    Lee los sets de entrenamiento y prueba, binariza y alinea sus columnas.
+    """
+    print(f"Leyendo set de entrenamiento desde: {input_path_train}")
+    df_train = pd.read_csv(input_path_train, sep=';')
+    
+    print(f"Leyendo set de prueba desde: {input_path_test}")
+    df_test = pd.read_csv(input_path_test, sep=';')
+    
+    # Llama a tu función principal para binarizar y alinear
+    df_train_binned, df_test_binned = binarize_and_align_quantiles(df_train, df_test, columns_to_bin, q)
+    
+    # Guardar los DataFrames procesados
+    df_train_binned.to_csv(output_path_train, sep=';', index=False)
+    df_test_binned.to_csv(output_path_test, sep=';', index=False)
+    
+    print("Tarea de binarización y alineación completada con éxito.")

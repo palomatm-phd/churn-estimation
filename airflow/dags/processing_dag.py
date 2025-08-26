@@ -9,25 +9,27 @@ from airflow.models.variable import Variable
 from scripts.tasks import (
     remove_rows_with_any_null_task,
     clean_negatives_task,
-    impute_zeros_task,
-    impute_categoricals_task,
     calculate_imputation_values_task,
-    apply_imputation_task,
-    create_null_flags_task
+    create_null_flags_task,
+    train_test_split_task,
+    impute_all_nulls_task
 )
 
 # Carga la configuración desde la Variable de Airflow que creaste
-CONFIG = Variable.get("churn_pipeline_config", deserialize_json=True)
+CONFIG = Variable.get("processing_config", deserialize_json=True)
 
 # Define las rutas de los ficheros. Asegúrate de que la carpeta 'processed' exista.
-RAW_DATA_PATH = '/opt/airflow/data/raw/train.csv'
-STEP1_NULL_ROWS_REMOVED_PATH = '/opt/airflow/data/processed/train_step1_null_rows_removed.csv' # <-- NUEVA
-STEP2_NEGATIVES_REMOVED_PATH = '/opt/airflow/data/processed/train_step2_negatives_removed.csv' # <-- NUEVA
-STEP3_NULL_FLAGS_PATH = '/opt/airflow/data/processed/train_step3_null_flags.csv'
-STEP4_ZEROS_PATH = '/opt/airflow/data/processed/train_step4_zeros.csv'
-IMPUTATION_VALUES_PATH = '/opt/airflow/data/processed/imputation_values.json'
-STEP5_MEDIANS_PATH = '/opt/airflow/data/processed/train_step5_medians.csv'
-CLEAN_DATA_PATH = '/opt/airflow/data/processed/train_clean.csv'
+RAW_DATA_PATH = '/opt/airflow/data/raw/dataset.csv'
+CLEAN_DATA_PATH = '/opt/airflow/data/processed'
+
+DATA_STEP_1 = CLEAN_DATA_PATH + '/data_step1_nulls_removed.csv'
+DATA_STEP_2 = CLEAN_DATA_PATH + '/data_step2_negatives_cleaned.csv'
+DATA_STEP_3 = CLEAN_DATA_PATH + '/data_step3_null_flags.csv'
+IMPUTATION_VALUES_JSON = CLEAN_DATA_PATH + '/imputation_values.json'
+DATA_STEP_4 = CLEAN_DATA_PATH + '/data_step4_imputed.csv'
+DATA_STEP_5 = CLEAN_DATA_PATH + '/data_step5_final_clean.csv'
+TRAIN_OUTPUT_PATH = CLEAN_DATA_PATH + '/train_set.csv'
+TEST_OUTPUT_PATH = CLEAN_DATA_PATH + '/test_set.csv'
 
 with DAG(
     dag_id='churn_full_imputation_pipeline',
@@ -41,7 +43,7 @@ with DAG(
         python_callable=remove_rows_with_any_null_task,
         op_kwargs={
             'input_path': RAW_DATA_PATH,
-            'output_path': STEP1_NULL_ROWS_REMOVED_PATH,
+            'output_path': DATA_STEP_1,
             'config': CONFIG
         }
     )
@@ -50,8 +52,8 @@ with DAG(
         task_id='clean_negatives',
         python_callable=clean_negatives_task,
         op_kwargs={
-            'input_path': STEP1_NULL_ROWS_REMOVED_PATH,
-            'output_path': STEP2_NEGATIVES_REMOVED_PATH,
+            'input_path': DATA_STEP_1,
+            'output_path': DATA_STEP_2,
             'config': CONFIG
         }
     )
@@ -59,51 +61,43 @@ with DAG(
         task_id='create_null_flags',
         python_callable=create_null_flags_task,
         op_kwargs={
-            'input_path': STEP2_NEGATIVES_REMOVED_PATH,
-            'output_path': STEP3_NULL_FLAGS_PATH,
+            'input_path': DATA_STEP_2,
+            'output_path': DATA_STEP_3,
             'config': CONFIG
         }
     )
     
-    impute_zeros = PythonOperator(
-        task_id='impute_with_zero',
-        python_callable=impute_zeros_task,
-        op_kwargs={
-            'input_path': STEP3_NULL_FLAGS_PATH,
-            'output_path': STEP4_ZEROS_PATH,
-            'config': CONFIG
-        }
-    )
-
     calculate_imputation_values = PythonOperator(
         task_id='calculate_imputation_values',
         python_callable=calculate_imputation_values_task,
         op_kwargs={
-            'input_path': STEP4_ZEROS_PATH,
-            'output_path_json': IMPUTATION_VALUES_PATH,
+            'input_path': DATA_STEP_3,
+            'output_path_json': IMPUTATION_VALUES_JSON,
             'config': CONFIG
         }
     )
-    
-    apply_imputation = PythonOperator(
-        task_id='apply_median_imputation',
-        python_callable=apply_imputation_task,
+
+    impute_all_nulls = PythonOperator(
+        task_id='impute_all_nulls',
+        python_callable=impute_all_nulls_task,
         op_kwargs={
-            'input_path_data': STEP4_ZEROS_PATH,
-            'output_path_data': STEP5_MEDIANS_PATH,
-            'input_path_json': IMPUTATION_VALUES_PATH
+            'input_path': DATA_STEP_3,
+            'output_path': DATA_STEP_4,
+            'imputation_values_path': IMPUTATION_VALUES_JSON,
+            'config': CONFIG
         }
     )
 
-    impute_categoricals = PythonOperator(
-        task_id='impute_categoricals',
-        python_callable=impute_categoricals_task,
+    train_test_split = PythonOperator(
+        task_id='train_test_split',
+        python_callable=train_test_split_task,
         op_kwargs={
-            'input_path': STEP5_MEDIANS_PATH,
-            'output_path': CLEAN_DATA_PATH,
+            'input_path': DATA_STEP_4,
+            'train_output_path': TRAIN_OUTPUT_PATH,
+            'test_output_path': TEST_OUTPUT_PATH,
             'config': CONFIG
         }
     )
 
     # Flow definition
-    remove_null_rows >> clean_negatives >> create_null_flags >> impute_zeros >> calculate_imputation_values >> apply_imputation >> impute_categoricals
+    remove_null_rows >> clean_negatives >> create_null_flags >> calculate_imputation_values >> impute_all_nulls >> train_test_split
