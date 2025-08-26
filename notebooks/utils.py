@@ -207,8 +207,7 @@ def graficar_distribuciones_categoricas(df: pd.DataFrame, columnas: list, n_cols
 
 def analizar_churn_categorica(df: pd.DataFrame, columna: str, target: str = 'churn'):
     """
-    Versión mejorada que analiza y visualiza la tasa de churn para una variable categórica
-    con dos gráficos: distribución y tasa de churn.
+    Versión mejorada que analiza y visualiza el total de churn para una variable categórica.
     """
     if columna not in df.columns:
         print(f"Error: La columna '{columna}' no se encuentra en el DataFrame.")
@@ -216,42 +215,41 @@ def analizar_churn_categorica(df: pd.DataFrame, columna: str, target: str = 'chu
 
     print(f"--- Análisis de Churn para la Variable Categórica: '{columna}' ---")
 
-    tasa_churn_general = df[target].mean()
-    analisis = df.groupby(columna)[target].agg(['mean', 'count']).rename(
-        columns={'mean': 'Tasa de Churn', 'count': 'Total Clientes'}
-    ).sort_values(by='Tasa de Churn', ascending=False)
+    # Agregando el total de churn a la tabla de análisis
+    analisis = df.groupby(columna).agg(
+        {'churn': ['mean', 'count', 'sum']}
+    ).rename(
+        columns={'mean': 'Tasa de Churn', 'count': 'Total Clientes', 'sum': 'Total Churn'}
+    )
+    analisis.columns = analisis.columns.droplevel(0)
+    analisis = analisis.sort_values(by='Total Churn', ascending=False)
     
     print(analisis)
     print("\n")
 
-    # --- Creación de la visualización con dos subplots ---
-    fig, axes = plt.subplots(1, 2, figsize=(18, 7))
-    fig.suptitle(f'Análisis de Churn por "{columna}"', fontsize=18, weight='bold')
+    # --- Creación de la visualización con un solo plot ---
+    fig, ax = plt.subplots(figsize=(12, 7))
+    fig.suptitle(f'Total de Clientes con Churn por "{columna}"', fontsize=16, weight='bold')
 
-    # Gráfico 1: Distribución de Clientes
-    sns.barplot(x=analisis.index, y=analisis['Total Clientes'], ax=axes[0], palette='viridis', hue=analisis.index)
-    axes[0].set_title('Distribución de Clientes por Categoría', fontsize=14)
-    axes[0].set_xlabel(columna, fontsize=12)
-    axes[0].set_ylabel('Número de Clientes', fontsize=12)
-    axes[0].tick_params(axis='x', rotation=45)
+    # Gráfico que muestra el número absoluto de clientes con churn
+    sns.barplot(x=analisis.index, y=analisis['Total Churn'], ax=ax, palette='plasma', hue=analisis.index)
+    ax.set_title(f'Número Absoluto de Clientes con Churn por Categoría', fontsize=14)
+    ax.set_xlabel(columna, fontsize=12)
+    ax.set_ylabel('Número Total de Clientes con Churn', fontsize=12)
+    ax.tick_params(axis='x', rotation=45)
 
-    # Gráfico 2: Tasa de Churn
-    sns.barplot(x=analisis.index, y=analisis['Tasa de Churn'], ax=axes[1], palette='plasma', hue=analisis.index)
-    axes[1].axhline(tasa_churn_general, color='red', linestyle='--', 
-                    label=f'Tasa General ({tasa_churn_general:.2%})')
-    axes[1].set_title('Tasa de Churn por Categoría', fontsize=14)
-    axes[1].set_xlabel(columna, fontsize=12)
-    axes[1].set_ylabel('Tasa de Churn', fontsize=12)
-    axes[1].tick_params(axis='x', rotation=45)
-    axes[1].legend()
+    # Añadir las etiquetas de valor en las barras para mayor claridad
+    for container in ax.containers:
+        ax.bar_label(container, fmt='%.0f', fontsize=10)
 
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95]) # Ajustar para el título principal
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
 
-def analizar_churn_numerica(df: pd.DataFrame, columna: str, target: str = 'churn', q: int = 5):
+def analizar_churn_numerica(df: pd.DataFrame, columna: str, target: str = 'churn', q: int = 5, umbral_discreta: int = 20):
     """
-    Versión mejorada que analiza y visualiza la tasa de churn para una variable numérica
-    con dos gráficos: distribución por churn y tasa de churn por rangos.
+    Versión mejorada que analiza y visualiza el total de churn para una variable numérica.
+    Detecta automáticamente si la variable es discreta o continua. Para las discretas,
+    las ordena por valor.
     """
     if columna not in df.columns:
         print(f"Error: La columna '{columna}' no se encuentra en el DataFrame.")
@@ -264,43 +262,76 @@ def analizar_churn_numerica(df: pd.DataFrame, columna: str, target: str = 'churn
     
     df_copy = df.copy()
     
-    # --- Creación de la visualización con dos subplots ---
-    fig, axes = plt.subplots(1, 2, figsize=(18, 7))
-    fig.suptitle(f'Análisis de Churn por "{columna}"', fontsize=18, weight='bold')
-
-    # Gráfico 1: Distribución de la variable por valor de Churn
-    sns.histplot(data=df_copy, x=columna, hue=target, multiple="dodge", kde=True, ax=axes[0], palette='coolwarm')
-    axes[0].set_title(f'Distribución de "{columna}" por Churn', fontsize=14)
-    axes[0].set_xlabel(columna, fontsize=12)
-    axes[0].set_ylabel('Frecuencia', fontsize=12)
-    
-    # Gráfico 2: Tasa de Churn por rangos de la variable
-    columna_binned = f'{columna}_rango'
-    try:
-        df_copy[columna_binned] = pd.qcut(df_copy[columna], q=q, duplicates='drop')
+    # Lógica para determinar si la variable es discreta o continua
+    if df[columna].nunique() <= umbral_discreta:
+        print(f"La columna '{columna}' es tratada como discreta (<= {umbral_discreta} valores únicos).")
         
-        tasa_churn_general = df_copy[target].mean()
-        analisis_binned = df_copy.groupby(columna_binned)[target].agg(['mean', 'count']).rename(
-            columns={'mean': 'Tasa de Churn', 'count': 'Total Clientes'}
+        # Agregando el total de churn a la tabla de análisis
+        analisis = df_copy.groupby(columna).agg(
+            {'churn': ['mean', 'count', 'sum']}
+        ).rename(
+            columns={'mean': 'Tasa de Churn', 'count': 'Total Clientes', 'sum': 'Total Churn'}
         )
+        analisis.columns = analisis.columns.droplevel(0)
         
-        print("Análisis por rangos:")
-        print(analisis_binned)
+        # Ordenar por el valor de la variable, no por la cantidad de churn
+        analisis.sort_index(inplace=True)
+        
+        print(analisis)
         print("\n")
-
-        sns.barplot(x=analisis_binned.index, y=analisis_binned['Tasa de Churn'], ax=axes[1], palette='rocket', hue=analisis_binned.index)
-        axes[1].axhline(tasa_churn_general, color='blue', linestyle='--', 
-                        label=f'Tasa General ({tasa_churn_general:.2%})')
-        axes[1].set_title(f'Tasa de Churn por Rangos de "{columna}"', fontsize=14)
-        axes[1].set_xlabel(f'Rangos de {columna} ({q} cuantiles)', fontsize=12)
-        axes[1].set_ylabel('Tasa de Churn', fontsize=12)
-        axes[1].tick_params(axis='x', rotation=45)
-        axes[1].legend()
-
-    except ValueError as e:
-        axes[1].text(0.5, 0.5, f"No se pudo generar el gráfico de rangos:\n{e}", 
-                     ha='center', va='center', transform=axes[1].transAxes)
         
+        # --- Creación del gráfico ---
+        fig, ax = plt.subplots(figsize=(12, 7))
+        fig.suptitle(f'Total de Clientes con Churn por "{columna}" (Valores Discretos)', fontsize=16, weight='bold')
+
+        sns.barplot(x=analisis.index.astype(str), y=analisis['Total Churn'], ax=ax, palette='plasma', hue=analisis.index.astype(str))
+        ax.set_title(f'Número Absoluto de Clientes con Churn por "{columna}"', fontsize=14)
+        ax.set_xlabel(columna, fontsize=12)
+        ax.set_ylabel('Número Total de Clientes con Churn', fontsize=12)
+        ax.tick_params(axis='x', rotation=45)
+        
+        for container in ax.containers:
+            ax.bar_label(container, fmt='%.0f', fontsize=10)
+    
+    else:
+        print(f"La columna '{columna}' es tratada como continua (> {umbral_discreta} valores únicos).")
+        
+        # --- Creación del gráfico ---
+        fig, ax = plt.subplots(figsize=(12, 7))
+        fig.suptitle(f'Total de Clientes con Churn por "{columna}" (Rangos Cuantiles)', fontsize=16, weight='bold')
+
+        columna_binned = f'{columna}_rango'
+        try:
+            df_copy[columna_binned] = pd.qcut(df_copy[columna], q=q, duplicates='drop')
+            
+            # Agregando el total de churn a la tabla de análisis
+            analisis_binned = df_copy.groupby(columna_binned).agg(
+                {'churn': ['mean', 'count', 'sum']}
+            ).rename(
+                columns={'mean': 'Tasa de Churn', 'count': 'Total Clientes', 'sum': 'Total Churn'}
+            )
+            analisis_binned.columns = analisis_binned.columns.droplevel(0)
+            
+            # Ordenar por el valor del bin, no por la cantidad de churn
+            # La línea de sort_values ha sido eliminada.
+            
+            print("Análisis por rangos:")
+            print(analisis_binned)
+            print("\n")
+
+            sns.barplot(x=analisis_binned.index.astype(str), y=analisis_binned['Total Churn'], ax=ax, palette='rocket', hue=analisis_binned.index.astype(str))
+            ax.set_title(f'Número Absoluto de Clientes con Churn por Rangos de "{columna}"', fontsize=14)
+            ax.set_xlabel(f'Rangos de {columna} ({q} cuantiles)', fontsize=12)
+            ax.set_ylabel('Número Total de Clientes con Churn', fontsize=12)
+            ax.tick_params(axis='x', rotation=45)
+            
+            for container in ax.containers:
+                ax.bar_label(container, fmt='%.0f', fontsize=10)
+
+        except ValueError as e:
+            ax.text(0.5, 0.5, f"No se pudo generar el gráfico de rangos:\n{e}", 
+                     ha='center', va='center', transform=ax.transAxes)
+            
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
 
@@ -401,3 +432,4 @@ def plot_tasa_churn_numerica(df, columna, ax, target='churn', q=5):
         
     except ValueError as e:
         ax.text(0.5, 0.5, f"No se pudo binnear '{columna}'\n{e}", ha='center', va='center')
+

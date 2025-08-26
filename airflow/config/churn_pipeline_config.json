@@ -1,24 +1,37 @@
 {
   "preprocessing": {
     "row_removal": {
-      "null_subset_cols": ["dualband", "area", "models"]
+      "null_subset_cols": [
+        "dualband", 
+        "area", 
+        "models", 
+        "rev_Mean", 
+        "mou_Mean", 
+        "totmrc_Mean", 
+        "da_Mean", 
+        "ovrmou_Mean", 
+        "ovrrev_Mean", 
+        "vceovr_Mean", 
+        "datovr_Mean", 
+        "roam_Mean"]
     },
     "negative_values": {
       "exception_cols": ["change_rev", "change_mou"]
     },
     "imputation": {
       "zero_fill_patterns": {
-        "endswith": ["_Mean"],
-        "startswith": ["change_", "avg6"]
+        "endswith": [],
+        "startswith": []
       },
       "zero_fill_exact_columns": [
-        "truck",
-        "rv",
-        "forgntvl"
       ],
       "median_fill_columns": [
+        "change_mou",
+        "change_rev",
+        "avg6mou",
+        "avg6rev",
+        "avg6qty",
         "hnd_price",
-        "lor",
         "adults",
         "income",
         "numbcars"
@@ -27,15 +40,7 @@
     },
     "null_flags": {
       "columns": [
-        "infobase",
-        "rev_Mean",
-        "hnd_price",
-        "change_rev",
-        "avg6rev",
-        "lor",
-        "adults",
-        "income",
-        "numbcars"
+        "infobase"
       ]
     }
   },

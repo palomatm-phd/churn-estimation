@@ -30,7 +30,6 @@ def clean_negatives(df, exception_cols):
 
 def remove_rows_with_any_null(df, subset_cols):
     df_cleaned = df.dropna(subset=subset_cols, how='any')
-    
     return df_cleaned
 
 #['infobase', 'rev_Mean', 'change_rev', 'avg6qty', 'hnd_price', 'prizm_social_one', 'hnd_webcap', 'ownrent', 'dwlltype', 'HHstatin', 'dwllsize', 'lor', 'adults', 'income', 'numbcars']
