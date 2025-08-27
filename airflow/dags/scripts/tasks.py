@@ -1,6 +1,7 @@
 import json
 import pandas as pd
 from sklearn.model_selection import train_test_split
+from typing import List
 from churn_library.processing_helpers import (
     find_columns_for_imputation, 
     impute_with_constant, 
@@ -8,7 +9,9 @@ from churn_library.processing_helpers import (
     remove_rows_with_any_null,
     clean_negatives)
 
-from churn_library.feature_helpers import create_new_features, binarize_and_align_quantiles
+from churn_library.feature_helpers import (create_new_features, 
+                                           binarize_and_align_quantiles,
+                                           detect_and_convert_categoricals)
 
 #======PROCESSING TASKS=========
 def remove_rows_with_any_null_task(input_path, output_path, config):
@@ -153,13 +156,13 @@ def train_test_split_task(input_path, train_output_path, test_output_path, confi
     print(f"Leyendo datos desde: {input_path}")
     df = pd.read_csv(input_path, sep=';')
 
-    target = config['general']['target']
+    target = config['target']
 
     X = df.drop(columns=[target])
     y = df[target]
 
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=config['general']['test_size'], random_state=config['general']['random_state']
+        X, y, test_size=config['preprocessing']['imputation']['test_size'], random_state=config['random_state']
     )
 
     train_df = pd.concat([X_train, y_train], axis=1)
@@ -372,3 +375,46 @@ def binarize_and_align_quantiles_task(input_path_train: str, input_path_test: st
     df_test_binned.to_csv(output_path_test, sep=';', index=False)
     
     print("Tarea de binarización y alineación completada con éxito.")
+
+def one_hot_encode_and_align_task(input_path_train, input_path_test, output_path_train, output_path_test):
+    """
+    Reads the train and test sets, automatically detects categorical variables,
+    applies One-Hot Encoding, and aligns their columns.
+    """
+    print("Starting the One-Hot Encoding and column alignment task...")
+    
+    # Read the DataFrames
+    df_train = pd.read_csv(input_path_train, sep=';')
+    df_test = pd.read_csv(input_path_test, sep=';')
+    
+    # Detect and convert categorical columns on the train set
+    df_train_converted, converted_cols = detect_and_convert_categoricals(df_train)
+    
+    # Apply the same conversion to the test set using the list from the train set
+    df_test_converted, _ = detect_and_convert_categoricals(df_test)
+    
+    # Get the list of ALL categorical variables (both object and converted)
+    categorical_cols_to_encode = df_train_converted.select_dtypes(include=['object', 'category']).columns.tolist()
+
+    print(f"Applying One-Hot Encoding to the following columns: {categorical_cols_to_encode}")
+
+    # Perform One-Hot Encoding on the train set
+    df_train_encoded = pd.get_dummies(df_train_converted, columns=categorical_cols_to_encode, drop_first=True)
+    
+    # Perform One-Hot Encoding on the test set
+    df_test_encoded = pd.get_dummies(df_test_converted, columns=categorical_cols_to_encode, drop_first=True)
+    
+    # Save the list of ALL resulting columns from the training set
+    final_train_cols = df_train_encoded.columns.tolist()
+
+    # Align the columns of the test set with the train set, filling missing columns with 0
+    df_test_aligned = df_test_encoded.reindex(columns=final_train_cols, fill_value=0)
+    
+    print(f"Number of columns in the train set: {df_train_encoded.shape[1]}")
+    print(f"Number of columns in the aligned test set: {df_test_aligned.shape[1]}")
+
+    # Save the processed DataFrames
+    df_train_encoded.to_csv(output_path_train, sep=';', index=False)
+    df_test_aligned.to_csv(output_path_test, sep=';', index=False)
+
+    print("One-Hot Encoding and alignment task completed successfully.")

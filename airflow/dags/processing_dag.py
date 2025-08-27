@@ -32,7 +32,7 @@ TRAIN_OUTPUT_PATH = CLEAN_DATA_PATH + '/train_set.csv'
 TEST_OUTPUT_PATH = CLEAN_DATA_PATH + '/test_set.csv'
 
 with DAG(
-    dag_id='churn_full_imputation_pipeline',
+    dag_id='processing_pipeline',
     start_date=datetime(2025, 8, 19),
     schedule=None,
     catchup=False,

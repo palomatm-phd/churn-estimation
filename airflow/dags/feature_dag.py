@@ -4,7 +4,7 @@ from airflow.operators.python import PythonOperator
 from airflow.models.variable import Variable
 
 # Importa tus funciones de feature engineering
-from churn_library.feature_helpers import (
+from scripts.tasks import (
     create_new_features_task,
     read_clean_data_task,
     one_hot_encode_and_align_task,
@@ -13,9 +13,10 @@ from churn_library.feature_helpers import (
 
 # Carga la configuración
 CONFIG = Variable.get("feature_config", deserialize_json=True)
+
 TEST_SET_PATH = '/opt/airflow/data/processed/test_set.csv'
 TRAIN_SET_PATH = '/opt/airflow/data/processed/test_set.csv'
-STEP1_TRAIN_REMOVED_COLS = '/opt/airflow/data/processed/step1_TRAIN_removed_cols.csv'
+STEP1_TRAIN_REMOVED_COLS = '/opt/airflow/data/processed/step1_train_removed_cols.csv'
 STEP1_TEST_REMOVED_COLS = '/opt/airflow/data/processed/step1_test_removed_cols.csv'
 STEP2_TRAIN_FE = '/opt/airflow/data/processed/step2_train_fe.csv'
 STEP2_TEST_FE = '/opt/airflow/data/processed/step2_test_fe.csv'
@@ -63,6 +64,7 @@ with DAG(
             'input_path_test': STEP2_TEST_FE,
             'output_path_train': STEP3_TRAIN_ENCODE,
             'output_path_test': STEP3_TEST_ENCODE,
+            'config': CONFIG
         }
     )
 

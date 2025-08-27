@@ -4,7 +4,6 @@
   "column_removal": {
     "irrelevant_columns": [
       "peak_dat_Mean",
-      "mou_cdat_Mean",
       "opk_dat_Mean",
       "mou_opkd_Mean",
       "drop_dat_Mean",

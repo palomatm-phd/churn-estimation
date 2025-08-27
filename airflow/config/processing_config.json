@@ -1,4 +1,6 @@
 {
+  "target": "churn",
+  "random_state": 42,
   "preprocessing": {
     "row_removal": {
       "null_subset_cols": [
@@ -23,7 +25,14 @@
         "endswith": [],
         "startswith": []
       },
-      "zero_fill_exact_columns": [
+      "unkn_fill_exact_columns": [
+        "prizm_social_one",
+        "hnd_webcap",
+        "ownrent",
+        "lor",
+        "dwlltype",
+        "HHstatin",
+        "dwllsize"
       ],
       "median_fill_columns": [
         "change_mou",
@@ -36,7 +45,8 @@
         "income",
         "numbcars"
       ],
-      "categorical_fill_value": "UNKN"
+      "categorical_fill_value": "UNKN",
+      "test_size": 0.2
     },
     "null_flags": {
       "columns": [

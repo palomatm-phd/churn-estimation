@@ -28,18 +28,35 @@ def group_category_by_churn(df: pd.DataFrame, column: str, upper_th: float, lowe
 
     return df_final, mapeo
 
-def one_hot_encode_and_align(df_train, df_test):
-    categorical_cols = df_train.select_dtypes(include=['object', 'category']).columns.tolist()
+def detect_and_convert_categoricals(df: pd.DataFrame, umbral_discreta: int = 20):
+    """
+    Detects numeric columns that are actually discrete/categorical
+    and converts them to the 'category' type.
     
-    df_train_encoded = pd.get_dummies(df_train, columns=categorical_cols, drop_first=True)
+    Parameters:
+    df (pd.DataFrame): The DataFrame containing the data.
+    umbral_discreta (int): The number of unique values below which
+                           a numeric variable is considered categorical.
     
-    final_train_cols = df_train_encoded.columns.tolist()
+    Returns:
+    tuple: A tuple with (the DataFrame with conversions, the list of converted columns).
+    """
+    df_copy = df.copy()
+    variables_convertidas = []
+
+    for col in df_copy.columns:
+        if is_numeric_dtype(df_copy[col]) and col != 'churn':
+            num_valores_unicos = df_copy[col].nunique()
+
+            if num_valores_unicos <= umbral_discreta:
+                df_copy[col] = df_copy[col].astype('category')
+                variables_convertidas.append(col)
     
-    df_test_encoded = pd.get_dummies(df_test, columns=categorical_cols, drop_first=True)
+    print(f"Conversion completed. Converted {len(variables_convertidas)} columns to 'category' type.")
+    print("Converted columns:", variables_convertidas)
     
-    df_test_aligned = df_test_encoded.reindex(columns=final_train_cols, fill_value=0)
-    
-    return df_train_encoded, df_test_aligned
+    return df_copy, variables_convertidas
+
 
 def get_quantile_bins(df: pd.DataFrame, column: str, q: int = 5, labels: Optional[List[str]] = None) -> Tuple[pd.DataFrame, Optional[List]]:
     """
