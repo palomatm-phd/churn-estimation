@@ -2,20 +2,20 @@ from datetime import datetime
 from airflow.models.dag import DAG
 from airflow.operators.python import PythonOperator
 from airflow.models.variable import Variable
-
-# Importa tus funciones de feature engineering
 from scripts.tasks import (
     create_new_features_task,
     read_clean_data_task,
     one_hot_encode_and_align_task,
-    binarize_and_align_quantiles_task
+    binarize_test_set_task,
+    binarize_train_set_task
 )
 
 # Carga la configuración
 CONFIG = Variable.get("feature_config", deserialize_json=True)
 
+BIN_MAP_PATH = '/opt/airflow/data/processed/bins_map.joblib'
 TEST_SET_PATH = '/opt/airflow/data/processed/test_set.csv'
-TRAIN_SET_PATH = '/opt/airflow/data/processed/test_set.csv'
+TRAIN_SET_PATH = '/opt/airflow/data/processed/train_set.csv'
 STEP1_TRAIN_REMOVED_COLS = '/opt/airflow/data/processed/step1_train_removed_cols.csv'
 STEP1_TEST_REMOVED_COLS = '/opt/airflow/data/processed/step1_test_removed_cols.csv'
 STEP2_TRAIN_FE = '/opt/airflow/data/processed/step2_train_fe.csv'
@@ -58,27 +58,41 @@ with DAG(
 
     one_hot_encode = PythonOperator(
         task_id='one_hot_encode_and_align',
-        python_callable=one_hot_encode_and_align_task,
+        python_callable=one_hot_encode_and_align_task, # Correct function
         op_kwargs={
             'input_path_train': STEP2_TRAIN_FE,
             'input_path_test': STEP2_TEST_FE,
             'output_path_train': STEP3_TRAIN_ENCODE,
             'output_path_test': STEP3_TEST_ENCODE,
-            'config': CONFIG
+            # 'config': CONFIG # config is not used in the function, so it can be removed
         }
     )
 
-    binarize_task = PythonOperator(
-        task_id='binarize_and_align_quantiles',
-        python_callable=binarize_and_align_quantiles_task,
+    binarize_train = PythonOperator(
+        task_id='binarize_train_set',
+        python_callable=binarize_train_set_task,
         op_kwargs={
-            'input_path_train': STEP3_TRAIN_ENCODE,
-            'input_path_test': STEP3_TEST_ENCODE,
-            'output_path_train': STEP4_TRAIN_BIN,
-            'output_path_test': STEP4_TEST_BIN,
-            'columns_to_bin': CONFIG['binning']['columns'],
-            'q': CONFIG['binning']['quantiles']
+            # Correct dependency from create_new_features
+            'input_path': STEP3_TRAIN_ENCODE, 
+            'output_path': STEP4_TRAIN_BIN,
+            'columns': CONFIG['binning']['columns'],
+            'q': CONFIG['binning']['quantiles'],
+            'bins_path': BIN_MAP_PATH
+        }
+    )
+    binarize_test = PythonOperator(
+        task_id='binarize_test_set',
+        python_callable=binarize_test_set_task,
+        op_kwargs={
+            'input_path': STEP3_TEST_ENCODE,
+            'output_path': STEP4_TEST_BIN,
+            'columns': CONFIG['binning']['columns'],
+            'bins_path': BIN_MAP_PATH
         }
     )
 
-    read_clean_data >> create_new_features >> one_hot_encode >> binarize_task
+    # El orden de las tareas
+    read_clean_data >> create_new_features
+
+    create_new_features >> one_hot_encode >> binarize_train
+    [binarize_train] >> binarize_test

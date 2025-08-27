@@ -35,7 +35,8 @@
       "avg6mou",
       "avg6qty",
       "avg6rev",
-      "ccrndmou_Mean"
+      "ccrndmou_Mean",
+      "Customer_ID"
     ]
   },
   "binning": {

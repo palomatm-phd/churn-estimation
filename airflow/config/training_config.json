@@ -1,0 +1,37 @@
+{   
+  "model_to_deploy": {
+    "model_name": "RandomForestClassifier",
+    "params": {}
+  },
+  "general": {
+    "target": "churn"
+  },
+  "feature_processing": {
+  },
+  "models_to_train": [
+    {
+      "model_name": "RandomForestClassifier",
+      "params": {},
+      "cv_folds": 5
+    },
+    {
+      "model_name": "LGBMClassifier",
+      "params": {},
+      "cv_folds": 5
+    },
+    {
+      "model_name": "XGBClassifier",
+      "params": {}
+    },
+    {
+      "model_name": "LogisticRegression",
+      "params": {
+        "solver": "liblinear"
+      }
+    },
+    {
+      "model_name": "KNeighborsClassifier",
+      "params": {}
+    }
+  ]
+}

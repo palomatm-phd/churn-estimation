@@ -15,7 +15,8 @@
         "ovrrev_Mean", 
         "vceovr_Mean", 
         "datovr_Mean", 
-        "roam_Mean"]
+        "roam_Mean",
+        "Customer_ID"]
     },
     "negative_values": {
       "exception_cols": ["change_rev", "change_mou"]
@@ -25,15 +26,7 @@
         "endswith": [],
         "startswith": []
       },
-      "unkn_fill_exact_columns": [
-        "prizm_social_one",
-        "hnd_webcap",
-        "ownrent",
-        "lor",
-        "dwlltype",
-        "HHstatin",
-        "dwllsize"
-      ],
+      "unkn_fill_exact_columns": [],
       "median_fill_columns": [
         "change_mou",
         "change_rev",
