@@ -1,4 +1,6 @@
 {
+  "target": "churn",
+  "random_state": 42,
   "preprocessing": {
     "row_removal": {
       "null_subset_cols": [
@@ -13,7 +15,9 @@
         "ovrrev_Mean", 
         "vceovr_Mean", 
         "datovr_Mean", 
-        "roam_Mean"]
+        "roam_Mean",
+        "eqpdays",
+        "Customer_ID"]
     },
     "negative_values": {
       "exception_cols": ["change_rev", "change_mou"]
@@ -23,8 +27,7 @@
         "endswith": [],
         "startswith": []
       },
-      "zero_fill_exact_columns": [
-      ],
+      "unkn_fill_exact_columns": [],
       "median_fill_columns": [
         "change_mou",
         "change_rev",
@@ -36,7 +39,8 @@
         "income",
         "numbcars"
       ],
-      "categorical_fill_value": "UNKN"
+      "categorical_fill_value": "UNKN",
+      "test_size": 0.2
     },
     "null_flags": {
       "columns": [
