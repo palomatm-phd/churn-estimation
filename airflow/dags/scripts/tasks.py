@@ -2,8 +2,10 @@ import json
 import pandas as pd
 from sklearn.metrics import accuracy_score, f1_score
 from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.preprocessing import StandardScaler
 import joblib
 import pickle
+import os
 
 # Mueve todas tus funciones de ayuda a un solo lugar
 from churn_library.helpers import (
@@ -387,11 +389,15 @@ def one_hot_encode_and_align_task(input_path_train, input_path_test, output_path
 
 #===========TRAINING TASK
 
-def train_model_task(input_path: str, model_config: dict, target_variable_name: str):#, columns_to_drop):
+def train_model_task(input_path: str, model_config: dict, target_variable_name: str):
     """
-    Tarea que entrena un modelo de Machine Learning.
-    """
+    Lee datos, realiza validación cruzada si se especifica en la configuración, 
+    entrena el modelo final con todo el set de entrenamiento y devuelve el modelo.
 
+    Parámetros:
+    - input_path (str): Ruta al archivo de datos de entrenamiento (train.csv).
+    - config (dict): Diccionario de configuración con los parámetros del modelo.
+    """
     print("Starting the model training task...")
     
     df = pd.read_csv(input_path, sep=';')
@@ -399,7 +405,6 @@ def train_model_task(input_path: str, model_config: dict, target_variable_name: 
     X = df.drop(columns=[target_variable_name])
     y = df[target_variable_name]
     
-    # Use the passed-in model_config directly
     model_name = model_config.get('model_name')
     model_params = model_config.get('params', {})
     cv_folds = model_config.get('cv_folds')
@@ -424,28 +429,40 @@ def train_model_task(input_path: str, model_config: dict, target_variable_name: 
     else:
         raise ValueError(f"Unsupported model: {model_name}")
 
+    # Escala los datos solo si el modelo lo requiere
+    scaler = None
+    if model_name in ['LogisticRegression', 'KNeighborsClassifier']:
+        print("Scaling data with StandardScaler...")
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+    else:
+        X_scaled = X
+
     if cv_folds and cv_folds > 1:
         print(f"Starting cross-validation with {cv_folds} folds for {model_name}...")
-        scores = cross_val_score(model, X, y, cv=cv_folds, scoring='accuracy')
+        scores = cross_val_score(model, X_scaled, y, cv=cv_folds, scoring='accuracy')
         avg_accuracy = scores.mean()
         print(f"\nCross-validation completed. Average Accuracy: {avg_accuracy:.4f}")
         print(f"Retraining the {model_name} on the full training dataset...")
         final_model = model
-        final_model.fit(X, y)
+        final_model.fit(X_scaled, y)
         
     else:
         print(f"No cross-validation specified. Training {model_name} on the full dataset...")
         final_model = model
-        final_model.fit(X, y)
+        final_model.fit(X_scaled, y)
 
-    model_name = model_config['model_name']
-    model_file_path = f"/opt/airflow/models/{model_name}_trained.pkl"
+    model_name_for_save = model_config.get('model_name')
+    model_file_path = f"/opt/airflow/models/{model_name_for_save}_trained.pkl"
+    scaler_file_path = f"/opt/airflow/models/{model_name_for_save}_scaler.pkl"
 
-    # Guarda el modelo en un archivo usando joblib
+    # Guarda el modelo y el scaler
     print(f"Guardando el modelo en: {model_file_path}")
     joblib.dump(final_model, model_file_path)
+    if scaler is not None:
+        print(f"Guardando el scaler en: {scaler_file_path}")
+        joblib.dump(scaler, scaler_file_path)
 
-    # Devuelve la ruta del archivo, no el objeto del modelo
     return model_file_path
     
 
@@ -456,9 +473,15 @@ def evaluate_model_task(model_path: str, test_data_path: str, target_variable: s
     print(f"Starting model evaluation from {test_data_path}...")
     
     try:
-        with open(model_path, 'rb') as f:
-            model = pickle.load(f)
+        # Carga el modelo
+        model = joblib.load(model_path)
         
+        # Carga el scaler si existe
+        model_name = model_path.split('/')[-1].replace('_trained.pkl', '')
+        scaler_path = f"/opt/airflow/models/{model_name}_scaler.pkl"
+        scaler = joblib.load(scaler_path) if os.path.exists(scaler_path) else None
+        
+        # Lee los datos de prueba
         df_test = pd.read_csv(test_data_path, sep=';')
         
     except FileNotFoundError:
@@ -468,50 +491,17 @@ def evaluate_model_task(model_path: str, test_data_path: str, target_variable: s
     X_test = df_test.drop(columns=[target_variable])
     y_test = df_test[target_variable]
     
-    y_pred = model.predict(X_test)
+    # Escala los datos de prueba si el scaler existe
+    if scaler is not None:
+        print("Scaling test data with the saved StandardScaler...")
+        X_test_scaled = scaler.transform(X_test)
+    else:
+        X_test_scaled = X_test
+    
+    y_pred = model.predict(X_test_scaled)
     accuracy = accuracy_score(y_test, y_pred)
     f1 = f1_score(y_test, y_pred)
     
-    print("\n--- Model Evaluation Results ---")
-    print(f"Accuracy: {accuracy:.4f}")
-    print(f"F1-Score: {f1:.4f}")
-    print("--------------------------------")
-
-def evaluate_model_task(model_path: str, test_data_path: str, target_variable: str):
-    """
-    Tarea que lee un modelo entrenado y datos de prueba para evaluar su rendimiento.
-    
-    Args:
-        model_path (str): Ruta al modelo entrenado en formato .pkl.
-        test_data_path (str): Ruta al archivo de datos de prueba.
-        target_variable (str): Nombre de la columna de la variable objetivo.
-    """
-    print(f"Starting model evaluation from {test_data_path}...")
-    
-    # 1. Cargar el modelo del archivo
-    try:
-        model = joblib.load(model_path)
-        print("Model loaded successfully.")
-    except FileNotFoundError:
-        print(f"Error: Model file not found at {model_path}. "
-              "Ensure the training task ran successfully.")
-        return # Salir de la función si el archivo no se encuentra
-
-    # 2. Cargar los datos de prueba
-    try:
-        df_test = pd.read_csv(test_data_path, sep=';')
-        print("Test data loaded successfully.")
-    except FileNotFoundError:
-        print(f"Error: Test data file not found at {test_data_path}.")
-        return
-
-    X_test = df_test.drop(columns=[target_variable])
-    y_test = df_test[target_variable]
-    
-    y_pred = model.predict(X_test)
-    accuracy = accuracy_score(y_test, y_pred)
-    f1 = f1_score(y_test, y_pred)
-
     print("\n--- Model Evaluation Results ---")
     print(f"Accuracy: {accuracy:.4f}")
     print(f"F1-Score: {f1:.4f}")
