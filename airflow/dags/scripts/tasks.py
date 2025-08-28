@@ -1,8 +1,11 @@
 import json
 import pandas as pd
-from sklearn.metrics import accuracy_score
-from sklearn.metrics import f1_score
-from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, f1_score
+from sklearn.model_selection import train_test_split, cross_val_score
+import joblib
+import pickle
+
+# Mueve todas tus funciones de ayuda a un solo lugar
 from churn_library.helpers import (
     create_null_flags,
     remove_rows_with_any_null,
@@ -10,17 +13,7 @@ from churn_library.helpers import (
     detect_and_convert_categoricals,
     create_new_features,
     sanitize_column_names)
-#import mlflow
-#import mlflow.sklearn
-import pickle
-from sklearn.model_selection import cross_val_score
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.neighbors import KNeighborsClassifier
-from lightgbm import LGBMClassifier
-from xgboost import XGBClassifier
-import joblib
-from typing import Dict
+
 
 #======PROCESSING TASKS=========
 def remove_rows_with_any_null_task(input_path, output_path, config):
@@ -337,12 +330,14 @@ def binarize_test_set_task(input_path, output_path, columns, bins_path: str) -> 
             include_lowest=True
         )
 
+        df_binned[f'{col}_binned'].fillna(-1, inplace=True)
+
         df_binned.drop(columns=[col], inplace=True)
         
     print("Test set binning completed.")
     df_binned.to_csv(output_path, sep=';', index=False)
 
-    return df_binned
+    return  {'test_df_path': output_path}
 
 def one_hot_encode_and_align_task(input_path_train, input_path_test, output_path_train, output_path_test):
     """
@@ -351,41 +346,36 @@ def one_hot_encode_and_align_task(input_path_train, input_path_test, output_path
     """
     print("Starting the One-Hot Encoding and column alignment task...")
     
-    # 1. Lee los DataFrames
+
     df_train = pd.read_csv(input_path_train, sep=';')
     df_test = pd.read_csv(input_path_test, sep=';')
-    
-    # 2. Sanitiza los nombres de las columnas
-    # Esto es crucial para evitar errores en pasos posteriores
+
     df_train_clean = sanitize_column_names(df_train)
     df_test_clean = sanitize_column_names(df_test)
-    
-    # 3. Detecta y convierte columnas numéricas discretas a categóricas
-    # Esta llamada crea las variables 'df_train_converted' y 'df_test_converted'
+
     df_train_converted = detect_and_convert_categoricals(df_train_clean)
     df_test_converted = detect_and_convert_categoricals(df_test_clean)
 
-    # 4. Obtiene la lista de TODAS las columnas categóricas para codificar
     categorical_cols_to_encode = df_train_converted.select_dtypes(include=['object', 'category']).columns.tolist()
 
     print(f"Applying One-Hot Encoding to the following columns: {categorical_cols_to_encode}")
 
-    # 5. Realiza One-Hot Encoding en el set de entrenamiento
     df_train_encoded = pd.get_dummies(df_train_converted, columns=categorical_cols_to_encode, drop_first=True)
     
-    # 6. Realiza One-Hot Encoding en el set de prueba
     df_test_encoded = pd.get_dummies(df_test_converted, columns=categorical_cols_to_encode, drop_first=True)
     
-    # 7. Alinea las columnas del set de prueba con el de entrenamiento
     final_train_cols = df_train_encoded.columns.tolist()
     df_test_aligned = df_test_encoded.reindex(columns=final_train_cols, fill_value=0)
     
+    df_train_final = df_train_encoded.astype(int, errors='ignore')
+    df_test_final = df_test_aligned.astype(int, errors='ignore')
+
     print(f"Number of columns in the train set: {df_train_encoded.shape[1]}")
     print(f"Number of columns in the aligned test set: {df_test_aligned.shape[1]}")
 
     # 8. Guarda los DataFrames procesados
-    df_train_encoded.to_csv(output_path_train, sep=';', index=False)
-    df_test_aligned.to_csv(output_path_test, sep=';', index=False)
+    df_train_final.to_csv(output_path_train, sep=';', index=False)
+    df_test_final.to_csv(output_path_test, sep=';', index=False)
     
     print("One-Hot Encoding and alignment task completed successfully.")
 
@@ -401,11 +391,10 @@ def train_model_task(input_path: str, model_config: dict, target_variable_name: 
     """
     Tarea que entrena un modelo de Machine Learning.
     """
+
     print("Starting the model training task...")
     
     df = pd.read_csv(input_path, sep=';')
-
-    #df.drop(columns=columns_to_drop, errors='ignore', inplace=True)
 
     X = df.drop(columns=[target_variable_name])
     y = df[target_variable_name]
@@ -418,14 +407,19 @@ def train_model_task(input_path: str, model_config: dict, target_variable_name: 
     final_model = None
 
     if model_name == 'RandomForestClassifier':
+        from sklearn.ensemble import RandomForestClassifier
         model = RandomForestClassifier(random_state=42, **model_params)
     elif model_name == 'LogisticRegression':
+        from sklearn.linear_model import LogisticRegression
         model = LogisticRegression(random_state=42, **model_params)
     elif model_name == 'KNeighborsClassifier':
+        from sklearn.neighbors import KNeighborsClassifier
         model = KNeighborsClassifier(**model_params)
     elif model_name == 'LGBMClassifier':
+        from lightgbm import LGBMClassifier
         model = LGBMClassifier(random_state=42, **model_params)
     elif model_name == 'XGBClassifier':
+        from xgboost import XGBClassifier
         model = XGBClassifier(random_state=42, use_label_encoder=False, eval_metric='logloss', **model_params)
     else:
         raise ValueError(f"Unsupported model: {model_name}")
@@ -511,16 +505,13 @@ def evaluate_model_task(model_path: str, test_data_path: str, target_variable: s
         print(f"Error: Test data file not found at {test_data_path}.")
         return
 
-    # 3. Separar las características (X) y la variable objetivo (y)
     X_test = df_test.drop(columns=[target_variable])
     y_test = df_test[target_variable]
     
-    # 4. Generar predicciones y calcular métricas
     y_pred = model.predict(X_test)
     accuracy = accuracy_score(y_test, y_pred)
     f1 = f1_score(y_test, y_pred)
-    
-    # 5. Imprimir los resultados de la evaluación
+
     print("\n--- Model Evaluation Results ---")
     print(f"Accuracy: {accuracy:.4f}")
     print(f"F1-Score: {f1:.4f}")

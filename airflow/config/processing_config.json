@@ -16,6 +16,7 @@
         "vceovr_Mean", 
         "datovr_Mean", 
         "roam_Mean",
+        "eqpdays",
         "Customer_ID"]
     },
     "negative_values": {
